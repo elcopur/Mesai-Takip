@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#182136">
+<title>Mesai Takip Dashboard</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#eef1f5;color:#18202f;font-family:Arial,Helvetica,sans-serif}
+header{background:#182136;color:#fff;padding:18px 16px}
+header h1{margin:0;font-size:21px} header p{margin:5px 0 0;font-size:12px;color:#c8cfda}
+.wrap{max-width:1100px;margin:auto;padding:14px}
+.card{background:#fff;border-radius:15px;padding:14px;margin-bottom:12px;box-shadow:0 2px 10px #0000000b}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label{display:block;font-size:12px;color:#707987;margin-bottom:6px}
+input,select,button{width:100%;height:42px;border:1px solid #d9dde4;border-radius:10px;padding:0 11px;font-size:14px;background:#fff}
+button{border:0;background:#182136;color:#fff;font-weight:700;cursor:pointer}
+button.gray{background:#687487}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.stat{background:#f5f6f8;border-radius:12px;padding:12px}
+.stat small{color:#697382;font-size:12px}.stat strong{display:block;font-size:18px;margin-top:5px}
+.note{font-size:11px;color:#747d89;margin:10px 0 0}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:850px}
+th{font-size:11px;background:#f7f8fa;color:#4d5665;padding:10px;text-align:left}
+td{padding:8px;border-bottom:1px solid #edf0f3;font-size:12px;vertical-align:middle}
+td input,td select{height:38px;min-width:90px}
+.sunday{background:#fff0f2}.holiday{background:#fff5df}.bad{color:#b42318;font-weight:700}.money{font-weight:700;white-space:nowrap}
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.summary div{background:#f5f6f8;border-radius:12px;padding:12px}.summary b{display:block;margin-top:4px}
+@media(max-width:650px){.grid,.actions{grid-template-columns:1fr 1fr}.stats{grid-template-columns:repeat(2,1fr)}.summary{grid-template-columns:1fr 1fr}header{padding:15px}.wrap{padding:10px}.stat strong{font-size:16px}}
+</style>
+</head>
+<body>
+<header><div class="wrap"><h1>Mesai Takip</h1><p>Telefon ve bilgisayar için çalışan sürüm • veriler bu cihazda saklanır</p></div></header>
+<main class="wrap">
+<section class="card">
+<div class="grid">
+<div><label>Aylık net maaş (TL)</label><input id="salary" type="number" value="40000"></div>
+<div><label>Ay</label><input id="month" type="month" value="2026-09"></div>
+<div><div><label>Normal günlük çalışma</label><input id="normal" type="number" step=".5" value="8"></div></div>
+<div><div><label>Mesai katsayısı</label><input id="rate" type="number" step=".1" value="1.5"></div></div>
+</div>
+<div class="actions"><button onclick="createMonth()">Ayı Oluştur</button><button class="gray" onclick="clearAll()">Temizle</button></div>
+</section>
+
+<section class="card">
+<div class="stats">
+<div class="stat"><small>Toplam çalışma</small><strong id="totalWork">0 saat</strong></div>
+<div class="stat"><small>Fazla mesai</small><strong id="overtime">0 saat</strong></div>
+<div class="stat"><small>Mesai ücreti</small><strong id="otPay">0 TL</strong></div>
+<div class="stat"><small>Toplam kazanç</small><strong id="totalPay">0 TL</strong></div>
+</div>
+<p class="note">Hesap: aylık maaş ÷ 225 = saatlik normal ücret. Normal ücret + mesai katsayısı × fazla mesai ayrı gösterilir.</p>
+</section>
+
+<section class="card">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Tarih</th><th>Gün</th><th>Durum</th><th>Giriş</th><th>Çıkış</th><th>Çalışma</th><th>Fazla</th><th>Mesai TL</th></tr></thead>
+<tbody id="rows"></tbody>
+</table>
+</div>
+</section>
+
+<section class="card">
+<div class="summary">
+<div>Normal çalışma ücreti<b id="normalPay">0 TL</b></div>
+<div>Eksik süre kesintisi<b id="deduction">0 TL</b></div>
+<div>Net toplam<b id="netTotal">0 TL</b></div>
+</div>
+</section>
+</main>
+
+<script>
+const days=["Pazar","Pazartesi","Salı","Çarşamba","Perşembe","Cuma","Cumartesi"];
+const statuses=["Geldi","Gelmedi","Ücretsiz izin","Raporlu","Resmi tatil"];
+let data=[];
+
+function fmt(n){return n.toLocaleString("tr-TR",{minimumFractionDigits:2,maximumFractionDigits:2})+" TL"}
+function hours(a,b){
+ if(!a||!b)return 0;
+ let [ah,am]=a.split(":").map(Number),[bh,bm]=b.split(":").map(Number);
+ let x=ah*60+am,y=bh*60+bm;if(y<x)y+=1440;
+ return (y-x)/60;
+}
+function createMonth(){
+ const m=document.getElementById("month").value;if(!m)return;
+ const [yy,mm]=m.split("-").map(Number), count=new Date(yy,mm,0).getDate();
+ data=Array.from({length:count},(_,i)=>({date:`${yy}-${String(mm).padStart(2,"0")}-${String(i+1).padStart(2,"0")}`,status:"Geldi",in:"",out:""}));
+ render();
+ save();
+}
+function render(){
+ const normal=+document.getElementById("normal").value||8;
+ rows.innerHTML="";
+ data.forEach((r,i)=>{
+   const d=new Date(r.date+"T12:00:00"), day=d.getDay(), tr=document.createElement("tr");
+   if(day===0)tr.className="sunday";
+   const w=hours(r.in,r.out);
+   let extra=0,pay=0;
+   if(r.status==="Geldi"){
+     if(day===0){extra=w;pay=w*hourly()*rate();}
+     else {extra=Math.max(0,w-normal);pay=extra*hourly()*rate();}
+   }
+   else if(r.status==="Resmi tatil" && w>0){extra=w;pay=w*hourly()*2;}
+   if(r.status==="Gelmedi" && day!==0) extra=-normal;
+   tr.innerHTML=`
+    <td>${d.toLocaleDateString("tr-TR")}</td><td>${days[day]}</td>
+    <td><select onchange="upd(${i},'status',this.value)">${statuses.map(s=>`<option ${r.status===s?"selected":""}>${s}</option>`).join("")}</select></td>
+    <td><input type="time" value="${r.in}" onchange="upd(${i},'in',this.value)"></td>
+    <td><input type="time" value="${r.out}" onchange="upd(${i},'out',this.value)"></td>
+    <td>${w.toLocaleString("tr-TR",{maximumFractionDigits:2})}</td>
+    <td class="${extra<0?"bad":""}">${extra.toLocaleString("tr-TR",{maximumFractionDigits:2})}</td>
+    <td class="money ${pay<0?"bad":""}">${fmt(pay)}</td>`;
+   rows.appendChild(tr);
+ });
+ calc();
+}
+function upd(i,k,v){data[i][k]=v;save();render()}
+function hourly(){return (+salary.value||0)/225}
+function rate(){return +document.getElementById("rate").value||1.5}
+function calc(){
+ let work=0, extra=0, ot=0, deduction=0;
+ const normal=+document.getElementById("normal").value||8;
+ data.forEach(r=>{
+  const d=new Date(r.date+"T12:00:00"),day=d.getDay(),w=hours(r.in,r.out);work+=w;
+  if(r.status==="Geldi"){
+    if(day===0){extra+=w;ot+=w*hourly()*rate()}
+    else{let e=Math.max(0,w-normal);extra+=e;ot+=e*hourly()*rate()}
+  }
+  else if(r.status==="Resmi tatil"){if(w>0){extra+=w;ot+=w*hourly()*2}}
+  else if(r.status==="Gelmedi" && day!==0){extra-=normal;deduction+=normal*hourly()}
+ });
+ totalWork.textContent=work.toLocaleString("tr-TR",{maximumFractionDigits:2})+" saat";
+ overtime.textContent=extra.toLocaleString("tr-TR",{maximumFractionDigits:2})+" saat";
+ otPay.textContent=fmt(ot);
+ normalPay.textContent=fmt((+salary.value||0)-deduction);
+ deduction.textContent=fmt(deduction);
+ netTotal.textContent=fmt((+salary.value||0)-deduction+ot);
+ totalPay.textContent=fmt((+salary.value||0)-deduction+ot);
+}
+function save(){localStorage.setItem("mesaiDashboard",JSON.stringify({data, salary:salary.value,month:month.value,normal:normal.value,rate:rate.value}))}
+function load(){
+ const x=JSON.parse(localStorage.getItem("mesaiDashboard")||"null");
+ if(x){salary.value=x.salary||40000;month.value=x.month||"2026-09";normal.value=x.normal||8;rate.value=x.rate||1.5;data=x.data||[]}
+ if(!data.length)createMonth();else render();
+}
+function clearAll(){if(confirm("Tüm kayıtlar silinsin mi?")){localStorage.removeItem("mesaiDashboard");location.reload()}}
+["salary","month","normal","rate"].forEach(id=>document.getElementById(id).addEventListener("change",()=>{save();render()}));
+load();
+</script>
+</body>
+</html>
